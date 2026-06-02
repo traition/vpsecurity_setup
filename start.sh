@@ -1,8 +1,10 @@
 #!/bin/bash
 #===============================================================================
-# AlmaLinux 10: SSH 密钥 + Google Authenticator 双因素认证配置脚本
+# AlmaLinux 10: SSH 密钥(ed25519) + Google Authenticator 双因素认证配置脚本
 # 用法: sudo bash script.sh -u <用户名> -p <端口>
 # 示例: sudo bash script.sh -u myadmin -p 7022
+# 脚本将自动生成 ed25519 密钥对，私钥存放于用户家目录 .ssh/id_ed25519，
+# 请务必在配置完成后将私钥安全下载到本地，并删除服务器上的私钥（如不愿保留）。
 #===============================================================================
 
 set -e
@@ -51,26 +53,29 @@ dnf install -y google-authenticator qrencode sudo expect
 # ---------- 加入 wheel 组 ----------
 usermod -aG wheel "${USERNAME}"
 
-# ---------- 交互式输入一行公钥 ----------
-echo "============================================="
-echo "请粘贴 ${USERNAME} 用户的 SSH 公钥（一行，例如 ssh-ed25519 AAAA...）"
-echo "============================================="
-read -r PUBKEY_CONTENT
-
+# ---------- 本地生成 ed25519 密钥对并部署公钥 ----------
+echo ">>> 在本地生成 ed25519 密钥对 ..."
 SSH_DIR="/home/${USERNAME}/.ssh"
 AUTH_KEYS="${SSH_DIR}/authorized_keys"
 mkdir -p "${SSH_DIR}"
 chmod 700 "${SSH_DIR}"
-chown -R "${USERNAME}:${USERNAME}" "${SSH_DIR}"
 
-if [ -n "${PUBKEY_CONTENT}" ]; then
-    echo "${PUBKEY_CONTENT}" > "${AUTH_KEYS}"
-    echo "公钥已保存至 ${AUTH_KEYS}"
-else
-    echo "警告: 未检测到输入，${AUTH_KEYS} 将保持为空。请稍后手动添加。"
-fi
-chmod 600 "${AUTH_KEYS}" 2>/dev/null || true
-chown "${USERNAME}:${USERNAME}" "${AUTH_KEYS}" 2>/dev/null || true
+# 在 /tmp 下生成临时密钥（缓存）
+TMP_KEY="/tmp/tmp_ssh_key_${USERNAME}"
+ssh-keygen -t ed25519 -f "${TMP_KEY}" -N "" -C "${USERNAME}@$(hostname)" >/dev/null 2>&1
+
+# 将公钥写入 authorized_keys（覆盖以保证只允许该密钥）
+cat "${TMP_KEY}.pub" > "${AUTH_KEYS}"
+echo "公钥已写入 ${AUTH_KEYS}"
+
+# 将私钥移动到用户 .ssh 目录
+mv "${TMP_KEY}" "${SSH_DIR}/id_ed25519"
+chmod 600 "${SSH_DIR}/id_ed25519"
+chown -R "${USERNAME}:${USERNAME}" "${SSH_DIR}"
+echo "私钥已保存至 ${SSH_DIR}/id_ed25519"
+
+# 清理 /tmp 下的临时公钥文件（私钥已移走）
+rm -f "${TMP_KEY}.pub"
 
 # ---------- 修改 SSH 主配置文件 ----------
 echo ">>> 修改 SSH 配置 /etc/ssh/sshd_config ..."
@@ -131,14 +136,12 @@ echo "请扫描即将出现的二维码，并手动输入验证码。"
 echo "之后的确认问题由脚本自动回答 (y y n y)。"
 echo "============================================="
 
-# 生成 expect 临时脚本
 TMPEXP=$(mktemp /tmp/ga_expect.XXXXXX)
 cat > "$TMPEXP" <<EOF
 #!/usr/bin/expect
 spawn su - ${USERNAME} -c "google-authenticator"
 set timeout -1
 
-# 等待出现二维码和输入验证码的提示，然后交还控制给用户手动输入
 expect {
     -re "Enter code from app" {
         interact "\r" return
@@ -146,7 +149,6 @@ expect {
     }
 }
 
-# 依次自动回答四个问题：y y n y
 expect {
     -re "Do you want authentication tokens to be time-based" {
         send "y\r"
@@ -208,8 +210,12 @@ fi
 
 echo "============================================="
 echo "配置完成！请验证以下功能："
-echo "1. 使用 ${USERNAME} 通过端口 ${SSHPORT} 登录: ssh ${USERNAME}@<IP> -p ${SSHPORT}"
+echo "1. 私钥路径: ${SSH_DIR}/id_ed25519"
+echo "   请立即将该私钥下载到本地 (例如用 scp 或复制内容)"
+echo "   并在本地执行 chmod 600 <私钥文件>"
+echo "   登录: ssh -i <私钥文件> ${USERNAME}@<服务器IP> -p ${SSHPORT}"
 echo "   预期: 密钥 + 2FA 验证码"
 echo "2. 登录后执行 sudo whoami，应要求输入 2FA 验证码"
 echo "3. 尝试 root 登录应被拒绝: ssh root@<IP> -p ${SSHPORT}"
+echo "4. 若不再需要服务器保留私钥，建议删除: rm ${SSH_DIR}/id_ed25519"
 echo "============================================="
