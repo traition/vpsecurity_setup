@@ -166,22 +166,47 @@ echo "============================================="
 echo "接下来将以 ${USERNAME} 身份配置 Google Authenticator"
 echo "============================================="
 
-# -r/--rate-limit 与 -R/--rate-time 必须成对；参数与选项粘连，避免 getopt 将下一项误解析
+# 非交互必须用 -C；输出用 tee 同步到终端（勿只重定向到文件，否则看不到 QR/密钥）
+# -r/-R 必须成对，使用粘连写法 -r3 -R30
 GA_LOG="/tmp/ga_output_${USERNAME}.txt"
-GA_BASE='google-authenticator -t -f -d -w 3 -e 5'
+GA_FILE="/home/${USERNAME}/.google_authenticator"
+GA_BASE='google-authenticator -t -f -C -d -w 3 -e 5 -Q ANSI'
+
+run_ga() {
+    local extra_opts="$1"
+    if command -v runuser >/dev/null 2>&1; then
+        runuser -u "${USERNAME}" -- ${GA_BASE} ${extra_opts}
+    else
+        su - "${USERNAME}" -c "${GA_BASE} ${extra_opts}"
+    fi
+}
+
 set +e
-su - "${USERNAME}" -c "${GA_BASE} -r3 -R30" >"${GA_LOG}" 2>&1
-GA_RC=$?
+run_ga '-r3 -R30' 2>&1 | tee "${GA_LOG}"
+GA_RC=${PIPESTATUS[0]}
 set -e
+
 if [ "${GA_RC}" -ne 0 ] && grep -q 'Must set -r when setting -R' "${GA_LOG}"; then
     echo ">>> 速率限制选项不兼容，改用 -u（禁用速率限制）重试 ..."
-    su - "${USERNAME}" -c "${GA_BASE} -u" >"${GA_LOG}" 2>&1
-    GA_RC=$?
+    set +e
+    run_ga '-u' 2>&1 | tee "${GA_LOG}"
+    GA_RC=${PIPESTATUS[0]}
+    set -e
 fi
-cat "${GA_LOG}"
+
 if [ "${GA_RC}" -ne 0 ]; then
-    echo "错误: Google Authenticator 配置失败。"
+    echo "错误: Google Authenticator 配置失败（退出码 ${GA_RC}）。"
     exit 1
+fi
+
+if [ ! -s "${GA_FILE}" ]; then
+    echo "错误: 未生成 ${GA_FILE}，配置可能未真正完成。"
+    exit 1
+fi
+
+if ! grep -q 'Your new secret key is:' "${GA_LOG}" 2>/dev/null; then
+    echo "警告: 日志中未找到密钥输出，请检查 ${GA_LOG} 或手动运行:"
+    echo "  runuser -u ${USERNAME} -- ${GA_BASE} -u"
 fi
 
 echo ""
