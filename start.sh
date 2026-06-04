@@ -228,6 +228,22 @@ else
     echo "${PAM_SSHD} 已包含 google_authenticator"
 fi
 
+# 已启用 2FA 时，注释会与 keyboard-interactive 冲突的 password-auth / postlogin
+comment_pam_line_if_active() {
+    local pattern="$1"
+    local desc="$2"
+    if grep -qE "^[[:space:]]*${pattern}[[:space:]]*$" "${PAM_SSHD}"; then
+        sed -i -E "/^[[:space:]]*${pattern}[[:space:]]*$/{
+            /^[[:space:]]*#/! s/^\([[:space:]]*\)\(auth/\1# \2/
+        }" "${PAM_SSHD}"
+        echo "已注释 ${PAM_SSHD} 中的: ${desc}"
+    fi
+}
+comment_pam_line_if_active 'auth[[:space:]]+substack[[:space:]]+password-auth' \
+    'auth substack password-auth'
+comment_pam_line_if_active 'auth[[:space:]]+include[[:space:]]+postlogin' \
+    'auth include postlogin'
+
 PAM_SYS="/etc/pam.d/system-auth"
 if [ -f "${PAM_SYS}" ]; then
     cp "${PAM_SYS}" "${PAM_SYS}.bak"
