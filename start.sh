@@ -161,55 +161,20 @@ echo ">>> 重启 sshd 服务 ..."
 systemctl restart sshd
 systemctl status sshd --no-pager
 
-# ---------- 自动配置 Google Authenticator（expect 处理交互）----------
+# ---------- 自动配置 Google Authenticator（命令行参数方式）----------
 echo "============================================="
 echo "接下来将以 ${USERNAME} 身份配置 Google Authenticator"
-echo "请扫描即将出现的二维码，并手动输入验证码。"
-echo "之后的确认问题由脚本自动回答 (y y n y)。"
 echo "============================================="
 
-TMPEXP=$(mktemp /tmp/ga_expect.XXXXXX)
-cat > "$TMPEXP" <<EOF
-#!/usr/bin/expect
-spawn su - ${USERNAME} -c "google-authenticator"
-set timeout -1
-
-expect {
-    -re "Enter code from app" {
-        interact "\r" return
-        send "\r"
-    }
-}
-
-expect {
-    -re "Do you want authentication tokens to be time-based" {
-        send "y\r"
-        exp_continue
-    }
-    -re "Do you want to disallow multiple uses" {
-        send "y\r"
-        exp_continue
-    }
-    -re "By default, tokens are good for 30 seconds" {
-        send "n\r"
-        exp_continue
-    }
-    -re "Do you want to enable rate-limiting" {
-        send "y\r"
-        exp_continue
-    }
-    eof
-}
-EOF
-chmod +x "$TMPEXP"
-"$TMPEXP"
-rm -f "$TMPEXP"
+su - "${USERNAME}" -c "google-authenticator -f -d -w 3 -R 3 -t" 2>&1 | tee /tmp/ga_output_${USERNAME}.txt
 
 echo ""
 echo "============================================="
 echo "⚠️  重要：请立即保存上面显示的 5 个紧急备用验证码！"
 echo "这些备用码可在手机丢失时用于登录，务必妥善保管。"
+echo "QR 码/密钥已保存，请用 Google Authenticator 应用扫描二维码或手动输入密钥。"
 echo "============================================="
+
 
 # ---------- PAM 配置 ----------
 echo ">>> 配置 PAM 模块 ..."
