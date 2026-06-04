@@ -166,7 +166,7 @@ echo "============================================="
 echo "接下来将以 ${USERNAME} 身份配置 Google Authenticator"
 echo "============================================="
 
-su - "${USERNAME}" -c "google-authenticator -f -d -w 3 -R 30 -t" 2>&1 | tee /tmp/ga_output_${USERNAME}.txt
+su - "${USERNAME}" -c "google-authenticator -f -d -w 3 -r 3 -R 30 -t" 2>&1 | tee /tmp/ga_output_${USERNAME}.txt
 
 echo ""
 echo "============================================="
