@@ -42,7 +42,34 @@ if id "${USERNAME}" &>/dev/null; then
 else
     useradd -m -s /bin/bash "${USERNAME}"
     echo "请设置用户 ${USERNAME} 的密码:"
-    passwd "${USERNAME}"
+    while true; do
+        read -s -p "New password: " PASSWORD1
+        echo
+        read -s -p "Retype new password: " PASSWORD2
+        echo
+
+        if [ "${PASSWORD1}" != "${PASSWORD2}" ]; then
+            echo "两次输入的密码不一致，请重新输入。"
+            continue
+        fi
+
+        if [ -z "${PASSWORD1}" ]; then
+            echo "密码不能为空，请重新输入。"
+            continue
+        fi
+
+        if command -v chpasswd >/dev/null 2>&1; then
+            echo "${USERNAME}:${PASSWORD1}" | chpasswd
+        else
+            echo "${PASSWORD1}" | passwd --stdin "${USERNAME}"
+        fi
+
+        if [ $? -eq 0 ]; then
+            break
+        fi
+
+        echo "设置密码失败，请重新输入。"
+    done
 fi
 
 # ---------- 安装所需软件 ----------
