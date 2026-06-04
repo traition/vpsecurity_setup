@@ -166,7 +166,23 @@ echo "============================================="
 echo "接下来将以 ${USERNAME} 身份配置 Google Authenticator"
 echo "============================================="
 
-su - "${USERNAME}" -c "google-authenticator -f -d -w 3 -r 3 -R 30 -t" 2>&1 | tee /tmp/ga_output_${USERNAME}.txt
+# -r/--rate-limit 与 -R/--rate-time 必须成对；参数与选项粘连，避免 getopt 将下一项误解析
+GA_LOG="/tmp/ga_output_${USERNAME}.txt"
+GA_BASE='google-authenticator -t -f -d -w 3 -e 5'
+set +e
+su - "${USERNAME}" -c "${GA_BASE} -r3 -R30" >"${GA_LOG}" 2>&1
+GA_RC=$?
+set -e
+if [ "${GA_RC}" -ne 0 ] && grep -q 'Must set -r when setting -R' "${GA_LOG}"; then
+    echo ">>> 速率限制选项不兼容，改用 -u（禁用速率限制）重试 ..."
+    su - "${USERNAME}" -c "${GA_BASE} -u" >"${GA_LOG}" 2>&1
+    GA_RC=$?
+fi
+cat "${GA_LOG}"
+if [ "${GA_RC}" -ne 0 ]; then
+    echo "错误: Google Authenticator 配置失败。"
+    exit 1
+fi
 
 echo ""
 echo "============================================="
