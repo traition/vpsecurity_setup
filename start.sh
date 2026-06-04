@@ -43,9 +43,14 @@ else
     useradd -m -s /bin/bash "${USERNAME}"
     echo "请设置用户 ${USERNAME} 的密码:"
     while true; do
-        read -s -p "New password: " PASSWORD1
+        if [ ! -r /dev/tty ]; then
+            echo "错误：无法读取终端输入。请直接运行脚本而不是通过 stdin 管道。"
+            exit 1
+        fi
+
+        read -s -p "New password: " PASSWORD1 </dev/tty
         echo
-        read -s -p "Retype new password: " PASSWORD2
+        read -s -p "Retype new password: " PASSWORD2 </dev/tty
         echo
 
         if [ "${PASSWORD1}" != "${PASSWORD2}" ]; then
